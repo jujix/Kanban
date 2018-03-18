@@ -5,61 +5,94 @@
 
 (def app-state
   (r/atom
-   {:columns [{:title "Todos"
-               :cards [{:title "Learn about Reagent"}
-                       {:title "Tell my friends about Lambda Island"}]}
-              {:title   "Awesomize"
-               :editing true
-               :cards   [{:title "Meditate"}
-                         {:title   "Work out"
-                          :editing true}]}]}))
+   {:columns [{:id    (random-uuid)
+               :title "Todos"
+               :cards [{:id    (random-uuid)
+                        :title "Learn about Reagent"}
+                       {:id    (random-uuid)
+                        :title "Tell my friends about Lambda Island"}]}
+              {:id    (random-uuid)
+               :title "Awesomize"
+               :cards [{:id    (random-uuid)
+                        :title "Meditate"}
+                       {:id    (random-uuid)
+                        :title "Work out"}]}]}))
 
+(defn AutoFocusInput [props]
+  (r/create-class
+   {:displayName         "AutoFocusInput"
+    :component-did-mount (fn [component]
+                           (.focus (r/dom-node component)))
+    :reagent-render      (fn [props]
+                           [:input props])}))
 
-(defn- update-title [card-cur title]
-  (swap! card-cur assoc :title title))
+(defn- update-title [cursor title]
+  (swap! cursor assoc :title title))
 
-(defn- stop-editing [card-cur]
-  (swap! card-cur dissoc :editing))
+(defn- stop-editing [cursor]
+  (swap! cursor dissoc :editing))
 
-(defn- start-editing [card-cur]
-  (swap! card-cur assoc :editing true))
+(defn- start-editing [cursor]
+  (swap! cursor assoc :editing true))
 
-(defn- Card [card-cur]
-  (let [{:keys [editing title]} @card-cur]
+(defn Editable [el cursor]
+  (let [{:keys [editing title]} @cursor]
     (if editing
-      [:div.card.editing
-       [:input
+      [el
+       {:className "editing"}
+       [AutoFocusInput
         {:type         "text"
          :value        title
-         :autoFocus    true
-         :on-change    #(update-title card-cur (.. % -target -value))
-         :on-blur      #(stop-editing card-cur)
+         :on-change    #(update-title cursor (.. % -target -value))
+         :on-blur      #(stop-editing cursor)
          :on-key-press #(if (= (.-charCode %) 13)
-                         (stop-editing card-cur))}]]
-      [:div.card {:on-click #(start-editing card-cur)} title])))
+                         (stop-editing cursor))}]]
+      [el {:on-click #(start-editing cursor)} title])))
 
-(defn NewCard []
+(defn Card [cursor]
+  [Editable :div.card cursor])
+
+(defn add-new-card [col-cur]
+  (swap! col-cur update :cards conj
+         {:id      (random-uuid)
+          :title   ""
+          :editing true}))
+
+(defn NewCard [col-cur]
   [:div.new-card
+   {:on-click #(add-new-card col-cur)}
    "+ add new card"])
 
 (defn Column [col-cur]
   (let [{:keys [title cards editing]} @col-cur]
     [:div.column
-     (if editing
-       [:input {:type "text" :value title}]
-       [:h2 title])
-     (for [i (range (count cards))]
-       [Card (r/cursor col-cur [:cards i])])
-     [NewCard]]))
+     ^{:key "title"} [Editable :h2 col-cur]
+     (map-indexed
+      (fn [idx {id :id}]
+        (let [card-cur (r/cursor col-cur [:cards idx])]
+          ^{:key id} [Card card-cur]))
+      cards)
+     ^{:key "new"} [NewCard col-cur]]))
 
-(defn NewColumn []
+(defn- add-new-column [board]
+  (swap! board update :columns conj
+         {:id      (random-uuid)
+          :title   ""
+          :cards   []
+          :editing true}))
+
+(defn NewColumn [board]
   [:div.new-column
+   {:on-click #(add-new-column board)}
    "+ add new column"])
 
 (defn Board [board]
   [:div.board
-   (for [i (range (count (:columns @board)))]
-     [Column (r/cursor board [:columns i])])
-   [NewColumn]])
+   (map-indexed
+    (fn [idx {id :id}]
+      (let [col-cur (r/cursor board [:columns idx])]
+        ^{:key id} [Column col-cur]))
+    (:columns @board))
+   ^{:key "new"} [NewColumn board]])
 
 (r/render [Board app-state] (js/document.getElementById "app"))
